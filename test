@@ -1,0 +1,432 @@
+#!/usr/bin/env python
+
+import unittest
+import reader
+import reg
+import nfa
+import grid
+import analyse
+
+class ToStr(unittest.TestCase):
+  """
+  Given a pre-constructed RE object, check that
+  it serialises correctly.
+  """
+
+  def __init__(self, re, out):
+    super(ToStr, self).__init__()
+    self.re = re
+    self.out = out
+
+  def runTest(self):
+    self.assertEquals(str(self.re), self.out)
+
+
+class RoundTrip(unittest.TestCase):
+  """
+  Given an RE string, check that it round-trips
+  through the RE class correctly.
+  """
+
+  def __init__(self, re):
+    super(RoundTrip, self).__init__()
+    self.re = re
+
+  def runTest(self):
+    parsed = reg.parse(self.re)
+    self.assertEquals(str(parsed), self.re)
+
+
+class RegExpToStr(unittest.TestSuite):
+
+  def __init__(self):
+    super(RegExpToStr, self).__init__()
+    reg._alphabet = set('ACEDGFIHMLONPSRUTVX_')
+
+    res = [
+      (reg.REAny(), "."),
+      (reg.REChar("C"), "C"),
+      (reg.REClass("OLP"), "[LOP]"),
+      (reg.RENotClass("OLP"), "[^LOP]"),
+      (reg.REStar(reg.RENotClass("ACE")), "[^ACE]*"),
+      (reg.REAlt(reg.REChar("X"), reg.REStar(reg.REChar("V"))), "X|V*"),
+      (reg.REStar(reg.REAlt(reg.REChar("X"), reg.REChar("V"))), "{X|V}*"),
+      ]
+
+    for re, out in res:
+      self.addTest(ToStr(re, out))
+
+
+_re_trials = [
+      # Test expr, number of states expected in NFA
+      ( ".", 2 ),
+      ( "A", 2 ),
+      ( "[ACE]", 2 ),
+      ( "[^ACE]", 2 ),
+      ( ".*", 2 ),
+      ( "A*", 2 ),
+      ( "AC", 4 ),
+      ( "ACE", 6 ),
+      ( "A|C", 6 ),
+      ( "AC|XC", 10 ),
+      ( "AC*", 4 ),
+      ( "A*C*", 4 ),
+      ( "(AC)", 4 ),
+      ( "(AC)*", 4 ),
+      ( "(A|HH)*", 8 ),
+      ( "A(C)*", 4 ),
+      ( "(A)(C)*", 4 ),
+      ( "((A)(C))*", 4 ),
+      ( "((A|E)|(C|X))*", 14 ),
+      ( "((A*|E*)*|(C*|X*))*", 14 ),
+      ( "A|C|E", 8 ),
+      ]
+
+class RegExpRoundTrip(unittest.TestSuite):
+
+  def __init__(self):
+    super(RegExpRoundTrip, self).__init__()
+    reg._alphabet = set('ACEDGFIHMLONPSRUTVX_')
+
+    for re in _re_trials:
+      self.addTest(RoundTrip(re[0]))
+
+
+class FullRoundTrip(unittest.TestSuite):
+  """
+  As above, but using the regexps from the puzzle.
+  """
+
+  def __init__(self):
+    super(FullRoundTrip, self).__init__()
+    reg._alphabet = set('ACEDGFIHMLONPSRUTVX_')
+
+    trial = reader.read_from()
+
+    for re in trial:
+      if re.find('\\') >= 0:
+        continue
+      self.addTest(RoundTrip(re))
+
+
+class SimplifyTest(unittest.TestCase):
+  """
+  Check that an RE simplifies correctly.
+  """
+
+  def __init__(self, re, result):
+    super(SimplifyTest, self).__init__()
+    self.re = re
+    self.result = result
+
+  def runTest(self):
+    parsed = reg.parse(self.re)
+    self.assertEqual(self.result, str(parsed),
+                     "Simplification of " + self.re +
+                     " gives " + str(parsed) +
+                     " not " + self.result)
+
+
+class Simplify(unittest.TestSuite):
+
+  def __init__(self):
+    super(Simplify, self).__init__()
+    reg._alphabet = set('ACEDGFIHMLONPSRUTVX_')
+
+    simplify = [
+      ("A**", "A*"),
+      ("A+*", "A*"),
+      ("A?*", "A*"),
+      ("A??", "A?"),
+      ("A*?", "A*"),
+      ("A+?", "A*"),
+      ("A++", "A+"),
+      ("A?+", "A*"),
+      ("A*+", "A*"),
+    ]
+
+    for re, simple in simplify:
+      self.addTest(SimplifyTest(re, simple))
+
+
+class Approximate(unittest.TestSuite):
+
+  def __init__(self):
+    super(Approximate, self).__init__()
+    reg._alphabet = set('ACEDGFIHMLONPSRUTVX_')
+
+    approximate = [
+        ( "P+(..)\\1.*", "P+(..)(..).*" ),
+        ( "(...?)\\1*", "(...?)(...?)*" ),
+        ( ".*(.)(.)(.)(.)\\4\\3\\2\\1.*", ".*(.)(.)(.)(.)(.)(.)(.)(.).*" ),
+        ( ".*(.)C\\1X\\1.*", ".*(.)C(.)X(.).*" ),
+        ( ".(.(.).).1=\\1;2=\\2;", ".(.(.).).1=(.(.).);2=(.);" ),
+    ]
+
+    for re, result in approximate:
+      self.addTest(REApproximation(re, result))
+
+
+class REApproximation(unittest.TestCase):
+  """
+  Check the non-regular expression to RE approximation code.
+  """
+
+  def __init__(self, re, result):
+    super(REApproximation, self).__init__()
+    self.re = re
+    self.result = result
+
+  def runTest(self):
+    ans = reg.approximate(self.re)
+    self.assertEqual(self.result, ans,
+                     "Result of approximating " + self.re +
+                     " should be " + self.result +
+                     " not " + ans)
+
+
+class MakeNFA(unittest.TestCase):
+  def __init__(self, s, n):
+    super(MakeNFA, self).__init__()
+    self.rep = s
+    self.state_count = n
+
+  def runTest(self):
+    parsed = reg.parse(self.rep)
+    fa = nfa.NFA(parsed)
+    self.assertEquals(len(fa.states()), self.state_count,
+                                   "State count for " + self.rep +
+                                   " should be " + str(self.state_count) +
+                                   ", not " + str(len(fa.states())))
+
+
+class MakeNFASuite(unittest.TestSuite):
+  def __init__(self):
+    super(MakeNFASuite, self).__init__()
+
+    for re in _re_trials:
+      self.addTest(MakeNFA(re[0], re[1]))
+
+
+class GridTests(unittest.TestSuite):
+  def __init__(self):
+    super(GridTests, self).__init__()
+    for d in range(1, 8):
+      self.addTest(GridTestBasic(d))
+      self.addTest(GridTestLengths(d))
+      self.addTest(GridTestUpdate(d))
+    self.addTests(unittest.TestLoader().loadTestsFromTestCase(GridTestLayout))
+
+class GridTestBasic(unittest.TestCase):
+  def __init__(self, d):
+    super(GridTestBasic, self).__init__()
+    self.d = d
+
+  def runTest(self):
+    """
+    Ensure grids of an appriate dimension have cell counts
+    that are the appropriate centred hexagonal numbers
+    """
+    d = self.d
+    h = 3 * d * (d - 1) + 1
+    l = d + d - 1
+    g = grid.Grid(d, [None] * l, [None] * l, [None] * l)
+    self.assertEquals(len(g._cells), h, "Size of grid of dim=" + str(d) +
+                                        " should be " + str(h))
+
+class GridTestLayout(unittest.TestCase):
+  def setUp(self):
+    """
+    Ensure grids of an appriate dimension have cell counts
+    that are the appropriate centred hexagonal numbers
+    """
+    g = grid.Grid(2, [None]*3, [None]*3, [None]*3)
+    for a, b, c, l in [
+                        (2, 0, 1, 'A'),
+                        (1, 0, 2, 'B'),
+                        (2, 1, 0, 'C'),
+                        (1, 1, 1, 'D'),
+                        (0, 1, 2, 'E'),
+                        (1, 2, 0, 'F'),
+                        (0, 2, 1, 'G'),
+                      ]:
+      g[a, b, c] = set(l)
+
+    self.grid = g
+
+  def test_print(self):
+    expected = """\
+ A B 
+C D E 
+ F G """
+    self.assertEquals(str(self.grid), expected)
+
+  def test_coord_valid(self):
+    good = set()
+    bad = set()
+    for a in 0, 1, 2:
+      for b in 0, 1, 2:
+        for c in 0, 1, 2:
+          if self.grid[a, b, c]:
+            good.add((a, b, c))
+          else:
+            bad.add((a, b, c))
+
+    self.assertEquals(len(good), 7)
+    self.assertEquals(len(bad), 20)
+
+    for a, b, c in good:
+      # These shouldn't throw
+      self.grid[a, b, c] = set("X")
+
+    for a, b, c in bad:
+      with self.assertRaises(KeyError):
+        self.grid[a, b, c] = set("X")
+
+  def test_line_a(self):
+    self.assertEqual(self.grid.line(0, 0), [ set('E'), set('G') ])
+    self.assertEqual(self.grid.line(0, 1), [ set('B'), set('D'), set('F') ])
+    self.assertEqual(self.grid.line(0, 2), [ set('A'), set('C') ])
+
+  def test_line_b(self):
+    self.assertEqual(self.grid.line(1, 0), [ set('A'), set('B') ])
+    self.assertEqual(self.grid.line(1, 1), [ set('C'), set('D'), set('E') ])
+    self.assertEqual(self.grid.line(1, 2), [ set('F'), set('G') ])
+
+  def test_line_c(self):
+    self.assertEqual(self.grid.line(2, 0), [ set('F'), set('C') ])
+    self.assertEqual(self.grid.line(2, 1), [ set('G'), set('D'), set('A') ])
+    self.assertEqual(self.grid.line(2, 2), [ set('E'), set('B') ])
+
+
+class GridTestLengths(unittest.TestCase):
+  def __init__(self, d):
+    super(GridTestLengths, self).__init__()
+    self.d = d
+
+  def runTest(self):
+    """
+    Ensure grids of an appriate dimension have cell counts
+    that are the appropriate centred hexagonal numbers
+    """
+    d = self.d
+    l = d + d - 1
+    g = grid.Grid(d, [None] * l, [None] * l, [None] * l)
+    for dim in 0, 1, 2:
+      for i in range(l):
+        line = g.line(dim, i)
+        self.assertEqual(len(line), l - abs(d - 1 - i))
+
+class GridTestUpdate(unittest.TestCase):
+  def __init__(self, d, *args):
+    super(GridTestUpdate, self).__init__(*args)
+    self.d = d
+
+  def runTest(self):
+    """
+    Ensure grids of an appriate dimension have cell counts
+    that are the appropriate centred hexagonal numbers
+    """
+    d = self.d
+    l = d + d - 1
+    g = grid.Grid(d, [None] * l, [None] * l, [None] * l)
+
+    for dim in 0, 1, 2:
+      for i in range(l):
+        line = g.line(dim, i)
+        l2 = [ set([n]) for n in range(len(line)) ]
+        self.assertEqual(len(line), len(l2))
+        g.line_update(dim, i, l2)
+
+
+class AnalysisTests(unittest.TestSuite):
+  def __init__(self):
+    reg._alphabet = set('ACEDGFIHMLONPSRUTVX_')
+    super(AnalysisTests, self).__init__()
+    self.addTests(unittest.TestLoader().loadTestsFromTestCase(ATNative))
+    self.addTests(unittest.TestLoader().loadTestsFromTestCase(ATFinite))
+
+class ATNative(unittest.TestCase):
+  def test_possibles(self):
+    c = [ set("ABC"), set("DEFGH"), set("AB"), set("A"), set("RUIO") ]
+    m = 1
+    for cc in c:
+      m *= len(cc)
+
+    p = list(analyse.possibilities(c))
+    self.assertEquals(len(p), m)
+
+    for pp in p:
+      self.assertEquals(len(pp), len(c))
+
+  def test_exhaust(self):
+    pat = analyse.NativePattern(".*A.*")
+    constraints = [ set("B"), set("AB"), set("B") ]
+    c2 = pat.exhaust(constraints)
+    self.assertEquals(c2, [ set("B"), set("A"), set("B") ])
+
+class ATFinite(unittest.TestCase):
+  def test_match(self):
+    ps = [
+      # pattern, string to test
+      ( ".*A.*", "CAC" ),
+      ( ".*A.*", "CCA" ),
+      ( "(A|HH)*", "AAAHHAHHHHAAHHA" ),
+      ]
+
+    for re, test in ps:
+      pat = analyse.FAPattern(re)
+      self.assertTrue(pat.match(test), re + ' should match ' + test)
+
+  def test_no_match(self):
+    ps = [
+      # pattern, string to test
+      ( ".*A.*", "CCB" ),
+      ( "(A|HH)*", "AAAHHAHHHAAHHA" ),
+      ]
+
+    for re, test in ps:
+      pat = analyse.FAPattern(re)
+      self.assertFalse(pat.match(test), re + ' should not match ' + test)
+
+  def test_exhaust(self):
+    pat = analyse.NativePattern(".*A.*")
+    constraints = [ set("B"), set("AB"), set("B") ]
+    c2 = pat.exhaust(constraints)
+    self.assertEquals(c2, [ set("B"), set("A"), set("B") ])
+
+  def test_wash(self):
+    re = ".[AC]."
+    poss = [ set("X"), set("ACX"), set("X") ]
+    pat = analyse.FAPattern(re)
+    poss2 = pat.wash(poss)
+
+    self.assertEquals(poss2, [ set("X"), set("AC"), set("X") ])
+
+  def test_wash_limits(self):
+    pat = analyse.FAPattern(".*A.*")
+    constraints = [ set("X"), set("AX"), set("X") ]
+    poss = pat.wash(constraints)
+
+    self.assertEquals(poss, [ set("X"), set("AX"), set("X") ])
+
+  def test_squeeze(self):
+    pat = analyse.FAPattern(".*A.*")
+    constraints = [ set("X"), set("AX"), set("X") ]
+    poss = pat.squeeze(constraints)
+
+    self.assertEquals(poss, [ set("X"), set("A"), set("X") ])
+
+
+
+if __name__ == "__main__":
+  runner = unittest.TextTestRunner()
+  runner.run (RegExpToStr())
+  runner.run (RegExpRoundTrip())
+  runner.run (FullRoundTrip())
+  runner.run (Simplify())
+  runner.run (Approximate())
+  runner.run (MakeNFASuite())
+  runner.run (GridTests())
+  runner.run (AnalysisTests())
+

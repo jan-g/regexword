@@ -1,0 +1,61 @@
+# Three sets of expressions, a, b and c.
+# All read in the same "direction".
+#
+#         a5
+#        /
+#   b1- . . .   a1
+#      . . . . /
+#     . . . . .
+#      . . . . \
+#   b5- . . .   c5
+#        \
+#         c1
+
+# honeycomb is 7 hexes on a side, 13 for each direction,
+# and therefore 13 hexes across the middle.
+
+# a line:
+.*SE.*UE.*
+.*LR.*RL.*
+.*OXR.*
+([^CEM]|EM)*
+(HHX|[^HX])*
+.*PRR.*DDC.*
+.*
+[AM]*CM(RC)*R?
+([^CM]|MM|CC)*
+(E|CR|MN)*
+P+(..)\1.*
+[CHMNOR]*I[CHMNOR]*
+(ND|ET|IN)[^X]*
+
+# b line:
+.*H.*H.*
+(DI|NS|TH|OM)*
+F.*[AO].*[AO].*
+(O|RHH|MM)*
+.*
+C*MC(CCC|MM)*
+[^C]*[^R]*III.*
+(...?)\1*
+([^X]|XCC)*
+(RR|HHH)*.?
+N.*X.X.X.*E
+R*D*M*
+.(C|HH)*
+
+# c line:
+.*G.*V.*H.*
+[CR]*
+.*XEXM*
+.*DD.*CCM.*
+.*XHCR.*X.*
+.*(.)(.)(.)(.)\4\3\2\1.*
+.*(IN|SE|HI)
+[^C]*MMM[^C]*
+.*(.)C\1X\1.*
+[CEIMU]*OH[AEMOR]*
+(RX|[^R])*
+[^M]*M[^M]*
+(S|MM|HHH)*
+

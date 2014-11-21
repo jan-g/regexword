@@ -1,0 +1,199 @@
+#!/usr/bin/env python
+
+import reader
+import analyse
+import reg
+import grid
+
+import itertools
+
+res = reader.read_from()
+print len(res)
+for l in res:
+  print l
+
+
+print "Alphabet:"
+alpha = analyse.alphabet(res)
+reg._alphabet = alpha
+print len(alpha), alpha
+
+
+# Turn into three groups, each with a length
+# Length of a side
+l = (len(res) / 3 + 1) / 2
+# Length of two sides
+ll = l * 2 - 1
+
+# HACK: special-case (...?)\1*
+for i in range(3 * ll):
+  if res[i] == '(...?)\\1*':
+    print "Replacing regexp with laborious alternative"
+    s = [ ''.join(j) for j in itertools.product(alpha, alpha) ]
+    s += [ ''.join(j) for j in itertools.product(alpha, alpha, alpha) ]
+    s = '(' + ')+|('.join(s) + ')+'
+    print "Result is of length ", len(s)
+    res[i] = s
+
+# Our coordinates work such that a + b + c = 3 * (l - 1)
+a = map(analyse.pattern, res[0:ll])
+b = map(analyse.pattern, res[ll:2*ll])
+c = map(analyse.pattern, res[ll*2:3*ll])
+
+print "The three sides. Length of single edge =", l
+print len(a), a
+print len(b), b
+print len(c), c
+
+g = grid.Grid(l, a, b, c, alpha)
+
+def display():
+  print g
+  for d in 0, 1, 2:
+    for n in range(ll):
+      print d, n, "possibles =", g.counts(d, n), g.marked(d, n)
+
+def showline(d, n):
+  line = g.line(d, n)
+  constraint = g.constraint(d, n)
+  print "Constraint:", constraint
+  for pos in line:
+    print pos
+
+def washline(d, n, printPos = False):
+  print "washline", d, n
+  line = g.line(d, n)
+  pat = g.constraint(d, n)
+  c = g.counts(d, n)
+  print "Washing with " + str(pat) + " from possibles", c,
+  line2 = pat.wash(line)
+  g.line_update(d, n, line2)
+  c = g.counts(d, n)
+  print " -->", c
+  if printPos:
+    printLine(line2)
+
+def printLine(pos):
+  print ''.join(map(lambda s: '[' + ''.join(sorted(s)) + ']', pos))
+
+def wash():
+  for d in 0, 1, 2:
+    for n in range(ll):
+      washline(d, n)
+
+def squeezeline(d, n, printPos = False):
+  print "squeezeline", d, n
+  line = g.line(d, n)
+  pat = g.constraint(d, n)
+  c = g.counts(d, n)
+  print "Squeezing with " + str(pat) + " from possibles", c,
+  line2 = pat.squeeze(line)
+  g.line_update(d, n, line2)
+  c = g.counts(d, n)
+  print " -->", c
+  if printPos:
+    printLine(line2)
+
+def squeeze():
+  for d in 0, 1, 2:
+    for n in range(ll):
+      squeezeline(d, n)
+
+def exhaustline(d, n, printPos = False):
+  print "exhaustline", d, n
+  line = g.line(d, n)
+  pat = g.constraint(d, n)
+  c = g.counts(d, n)
+  print "Exhausting with " + str(pat) + " from possibles", c,
+  line2 = pat.exhaust(line)
+  g.line_update(d, n, line2)
+  c = g.counts(d, n)
+  print " -->", c
+  if printPos:
+    printLine(line2)
+
+def exhaust(thresh):
+  print "Exhausting with threshold of", thresh
+  for d in 0, 1, 2:
+    for n in range(ll):
+      if g.counts(d, n) <= thresh:
+        exhaustline(d, n)
+
+def mark():
+  for d in 0, 1, 2:
+    for n in range(ll):
+      g.mark(d, n)
+
+def marked():
+  res = []
+  for d in 0, 1, 2:
+    for n in range(ll):
+      if g.marked(d, n):
+        res.append((g.counts(d, n), d, n))
+  return res
+  
+def solve():
+  mark()
+  while marked():
+    display()
+    wash()
+  mark()
+  while marked():
+    display()
+    squeeze()
+  mark()
+  while marked():
+    display()
+    lines = sorted(marked())
+    print "Exhausting cheapest line:", lines[0]
+    exhaustline(lines[0][1], lines[0][2])
+  display()
+
+while True:
+  try:
+    display()
+    while True:
+      action = raw_input("what now?").split()
+      if not action:
+        break
+      if action[0] == 'showline':
+        showline(int(action[1]), int(action[2]))
+      elif action[0] == 'washline':
+        washline(int(action[1]), int(action[2]), True)
+      elif action[0] == 'wash':
+        wash()
+      elif action[0] == 'squeezeline':
+        squeezeline(int(action[1]), int(action[2]), True)
+      elif action[0] == 'squeeze':
+        squeeze()
+      elif action[0] == 'nfa':
+        constraint = g.constraint(int(action[1]), int(action[2]))
+        print 'Table for', constraint
+        try:
+          print constraint._nfa
+        except Exception as e:
+          print "State table not available", e
+      elif action[0] == 'simplify':
+        constraint = g.constraint(int(action[1]), int(action[2]))
+        print 'Table for', constraint
+        try:
+          constraint._nfa.simplify()
+          print constraint._nfa
+        except:
+          print "State table not available"
+      elif action[0] == 'exhaustline':
+        exhaustline(int(action[1]), int(action[2]), True)
+      elif action[0] == 'exhaust':
+        exhaust(int(action[1]))
+      elif action[0] == 'mark':
+        mark()
+      elif action[0] == 'solve':
+        solve()
+      else:
+        print "unknown command"
+  except EOFError:
+    print
+    break
+  except Exception as e:
+    print "Something went wrong:", e
+
